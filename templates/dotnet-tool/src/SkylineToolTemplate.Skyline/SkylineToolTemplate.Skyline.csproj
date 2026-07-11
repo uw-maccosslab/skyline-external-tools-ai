@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows-targeted: the JSON-RPC client uses System.IO.Pipes message-mode (Windows-only at runtime),
+         and Skyline is Windows-only. This is the ONLY project that link-compiles the vendored SkylineTool
+         sources - that is what keeps Core and the CLI cross-platform. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>SkylineToolTemplate.Skyline</RootNamespace>
+    <!-- The vendored SkylineTool sources predate nullable reference types. -->
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SkylineToolTemplate.Core\SkylineToolTemplate.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vendored pwiz Skyline JSON-RPC client (Apache-2.0), link-compiled exactly the way pwiz's
+         SkylineMcpServer / skyline-prism / skyline-cadenza do. Originals: pwiz_tools/Skyline/SkylineTool/.
+         Sync procedure: see external/SkylineTool/README.md. -->
+    <Compile Include="..\..\external\SkylineTool\SkylineJsonToolClient.cs" Link="Rpc\SkylineJsonToolClient.cs" />
+    <Compile Include="..\..\external\SkylineTool\IJsonToolService.cs" Link="Rpc\IJsonToolService.cs" />
+    <Compile Include="..\..\external\SkylineTool\JsonToolConstants.cs" Link="Rpc\JsonToolConstants.cs" />
+    <Compile Include="..\..\external\SkylineTool\JsonToolModels.cs" Link="Rpc\JsonToolModels.cs" />
+  </ItemGroup>
+
+</Project>

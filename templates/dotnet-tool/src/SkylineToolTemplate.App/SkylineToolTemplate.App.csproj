@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The WinExe Skyline launches. AssemblyName MUST match the Command in tool-inf (<AssemblyName>.exe)
+         and the <ToolName>.properties filename. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>SkylineToolTemplate</AssemblyName>
+    <RootNamespace>SkylineToolTemplate.App</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SkylineToolTemplate.Core\SkylineToolTemplate.Core.csproj" />
+    <ProjectReference Include="..\SkylineToolTemplate.Skyline\SkylineToolTemplate.Skyline.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Skyline tool manifest: copied next to the exe and staged into the tool zip. -->
+    <None Include="tool-inf\info.properties" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="tool-inf\SkylineToolTemplate.properties" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

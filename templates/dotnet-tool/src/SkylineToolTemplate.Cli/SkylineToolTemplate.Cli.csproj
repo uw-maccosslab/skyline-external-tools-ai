@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Cross-platform command-line entry. References Core only - no Skyline RPC, no WPF. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SkylineToolTemplate.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SkylineToolTemplate.Core\SkylineToolTemplate.Core.csproj" />
+  </ItemGroup>
+
+</Project>

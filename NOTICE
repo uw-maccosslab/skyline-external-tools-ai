@@ -1,0 +1,8 @@
+skyline-external-tools-ai
+Copyright 2026 University of Washington
+
+This product includes software developed by the ProteoWizard project.
+
+  templates/dotnet-tool/external/SkylineTool/*.cs
+    Vendored verbatim from ProteoWizard/pwiz (pwiz_tools/Skyline/SkylineTool/),
+    licensed under the Apache License, Version 2.0. See the per-file headers.

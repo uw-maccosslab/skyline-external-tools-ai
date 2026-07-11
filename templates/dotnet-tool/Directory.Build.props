@@ -1,0 +1,20 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- So the net8.0-windows / WPF projects build on Linux/macOS CI (gate their TESTS to Windows). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- Single source of truth for the assembly version. Keep in lockstep with
+         src/*.App/tool-inf/info.properties `Version` at release. -->
+    <Version>0.1.0</Version>
+
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+
+    <!-- Do NOT set InvariantGlobalization=true: WPF text layout throws CultureNotFoundException under it.
+         Get numeric reproducibility with CultureInfo.InvariantCulture in every data path instead. -->
+  </PropertyGroup>
+
+</Project>

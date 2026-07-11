@@ -1,0 +1,11 @@
+# .NET build output (including anything built inside templates/)
+[Bb]in/
+[Oo]bj/
+publish/
+*.user
+.vs/
+.idea/
+
+# Local working files
+.tmp/
+*.binlog
