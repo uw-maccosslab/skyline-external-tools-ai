@@ -235,6 +235,9 @@ FROM RefSpectra s JOIN RefSpectraPeaks p ON p.RefSpectraID = s.id
   exclusively **misses** blibs written at a non-default level (Carafe/Cadenza-predicted `.blib`s are
   compressed but not always `0x9C`); the length check is level-agnostic. (Old/small BLIBs store peaks raw.)
 - Normalize intensities to base peak = 1.0 if you need relative intensities.
+- ⚠️ **Match fragments to the chromatogram export by m/z, not by order.** When you pair library fragment
+  intensities (`RefSpectraPeaks`) with Skyline's extracted fragment XICs (§9) for a spectral-match score,
+  align on **m/z** — the export's fragment row order does **not** follow the library's stored peak order.
 - RT / peak boundaries live in the `RetentionTimes` table (per-peptide `MIN(startTime)/MAX(endTime)` for the
   union firing window); `PRAGMA table_info(RetentionTimes)` first — older BLIBs lack start/end columns.
   `ScoreTypes.probabilityType` tells you filter direction (q-value lower-is-better vs. score higher-is-better).
@@ -295,6 +298,15 @@ Add `--import-fasta` to also add the matched peptides as targets.
 **Import FASTA / targets:** `--import-fasta=<file>` (`--keep-empty-proteins`);
 `--import-transition-list=<csv>` (slow, ~10 rows/s — show a heartbeat); annotations via `--annotation-*`
 (§4) or `ImportProperties` CSV.
+
+**Decoys for FDR in scheduled PRM (reversed sequences work).** Scheduled/timed PRM is often assumed to
+have "no decoy data" — untrue. A **reversed-sequence** decoy shares its target's amino-acid composition and
+therefore its **precursor m/z**, so it falls in the **same scheduled isolation window**, and the instrument
+physically recorded its (different) fragment m/z in those MS2 scans. Skyline can therefore extract **real**
+decoy chromatograms, and a decoy that is noise can legitimately out-score a target — giving a usable
+target/decoy FDR. Recipe: add the reversed peptides under a `decoy_`-prefixed protein (`--import-fasta` /
+`--import-transition-list`), extract chromatograms alongside the targets, score, then drop the decoy
+protein before write-back.
 
 **Document I/O (headless):** `--in`/`--open`, `--save`/`--out`/`--save-as`, `--new[=path]` (`--overwrite`,
 `--discard-changes`), `--share-zip[=…]` (`--share-type=minimal|complete`), `--batch-commands=<file>` (run a
@@ -411,8 +423,43 @@ IsotopeLabelType, TotalArea, Times, Intensities`.
 on `(PeptideModifiedSequence, PrecursorCharge)` with no normalization. (If your library came from
 elsewhere, mind §5's modification-format and I/L caveats.)
 
-**Write-back** the peaks you pick with `--import-peak-boundaries=<csv>` (§6); write per-precursor scores
-(q-value/PEP/detection flags) as document annotations via `--annotation-*` + `ImportProperties` (§4).
+### ⚠️ Scheduled PRM: the XIC extent already *is* the RT window
+On a scheduled/timed acquisition the instrument only records MS2 for a precursor **inside its scheduled RT
+window**, so the extracted chromatogram contains **no data outside that window** — the XIC extent *is* the
+hard RT limit. Layering a second `±` RT gate on top (around a predicted RT) is redundant and actively
+harmful when the predicted RT is off: it can exclude the true peak the instrument actually recorded. Treat
+the scheduling window (the XIC extent) as the only hard RT bound, and use any expected RT as a **soft
+prior** within it, not a cutoff.
+- **Prefer the document's `ExplicitRetentionTime` (the RT the run was *scheduled* on) over the spectral
+  library's predicted RT** as that expected RT. The acquisition was scheduled on the document RT, so the
+  data — and the true peak — sit there; even a fine-tuned library RT prediction can be off by >0.5 min for
+  a minority of peptides (a ~7% tail in one real dataset), which a tight RT gate then mis-reads. Export it
+  with a report selecting `ModifiedSequence` + `PrecursorCharge` + `ExplicitRetentionTime` (§2).
+
+**Write-back** the peaks you pick with `--import-peak-boundaries=<csv>` (§6, but mind the two gotchas
+below); write per-precursor scores (q-value/PEP/detection flags) as document annotations via
+`--annotation-*` + `ImportProperties` (§4).
+
+### ⚠️ Writing peak boundaries back (`--import-peak-boundaries`)
+Two gotchas here each cost real time to discover:
+- **Rows match by the raw *file* name, not the replicate name.** Replicates are frequently renamed (file
+  `2026-06-22-…-PRM-002.raw` → replicate `PRM-002`), but the boundaries file's `FileName` column must carry
+  the **file** name; the import **silently skips** any row it can't match. Confirm the write-back actually
+  moved a boundary rather than trusting a clean exit.
+- **Turn off Skyline's own peak algorithms first, or they quietly overrule you.** Peptide Settings ▸
+  Prediction peak-boundary **imputation** (`impute_missing="true"`, `max_rt_shift`, `max_peak_width_var`)
+  will **re-impute** any boundary you move more than `max_rt_shift` (e.g. 0.1 min) from the consensus, and
+  an active mProphet peak-scoring model can re-pick — so your imported boundaries look like they never
+  applied (peaks display at the predicted RT, not your pick). These are GUI-only settings today (no
+  `SkylineCmd` flag exposed under Peptide Settings), so a production tool should write them into the
+  document settings itself.
+
+### A "Candidate Peaks" diagnostic view earns its keep
+When a tool re-scores or re-picks peaks, expose a per-candidate score breakdown — every detector candidate
+with its **combined** score *and* the individual term contributions, which candidate was chosen, and any
+post-processing / reconciliation action taken — mirroring Skyline's own **View ▸ Live Reports ▸ Candidate
+Peaks**. It turns "why did it pick *that* peak?" from a debugging session into a glance, for you and the
+analyst alike.
 
 ---
 
@@ -507,6 +554,13 @@ exported trace against Skyline's chromatogram graph).
 - This is a **development aid**, not part of the shipped tool; the tool itself uses the vendored RPC
   client (§1).
 
+### Running a headless `SkylineCmd` alongside the live GUI
+For extraction / re-import experiments you can run `SkylineCmd.exe` against a **copy** of the document
+without disturbing the user's open session. ⚠️ Use the `SkylineCmd.exe` that sits in the **ClickOnce
+application folder next to `Skyline(-daily).exe`** — the `SkylineCmd.exe` in the sibling `…exe_…` folders
+fails with *"Unable to find Skyline.exe"*. Always work on a copy so a mistaken `--save` can't touch the
+live document.
+
 ---
 
 ## 13. Checklist for the next agent
@@ -529,7 +583,10 @@ exported trace against Skyline's chromatogram graph).
    `InvariantGlobalization`.
 8. **Chromatograms (§9):** `--chromatogram-file` (+ `--chromatogram-precursors`/`-products`) → 10-col TSV;
    `Times`/`Intensities` are comma arrays in one cell, minutes, **per-precursor grid** (read each row's
-   own arrays); join on `(PeptideModifiedSequence, PrecursorCharge)`; stream it.
+   own arrays); join on `(PeptideModifiedSequence, PrecursorCharge)`; stream it. **Write-back:**
+   `--import-peak-boundaries` matches by the raw **file** name, and Skyline's own boundary imputation /
+   mProphet model will overrule your picks unless disabled; on scheduled PRM treat the XIC extent as the
+   hard RT bound and use `ExplicitRetentionTime` as a soft prior, not a second RT gate.
 9. **Raw `.sky` (§10):** parse `transition_full_scan` for analyzer/res tolerances and
    `sample_file/@file_path` for raw availability (strip the `|`/`?` selector); **warn**, don't silently
    drop, when a raw file is missing.
