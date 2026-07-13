@@ -16,6 +16,7 @@ external tools generally** — not just ProteoWizard. The knowledge here was dis
 | Path | What it is |
 |---|---|
 | **`docs/skyline-external-tools.md`** | **The field guide** — the canonical, comprehensive reference: RPC connection, reports, document grid, settings, `.blib`, chromatogram export, reading the `.sky` XML, embedding a pwiz engine, packaging, and every gotcha that cost real time. |
+| **`docs/installing-a-skyline-tool.md`** | **End-user install guide** — a friendly, non-developer walkthrough for analysts who received a packaged tool `.zip`: prerequisites (.NET 8 Desktop Runtime), installing from the Tools menu, running, updating, and troubleshooting. |
 | **`docs/testing.md`** | Testing practices for external tools (the `FakeExecutor` seam, hermetic xUnit, the launch-verify ship gate, verify-against-real-data). |
 | **`claude/skills/skyline-external-tool/`** | The **`skyline-external-tool` skill** — drives the workflow: read the guide → scaffold from the template → implement → build → package → verify. |
 | **`claude/commands/`** | Slash commands for the tool lifecycle. |

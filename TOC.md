@@ -14,6 +14,9 @@ Index of everything in `skyline-external-tools-ai`. Update when you add a docume
   §0 tool shapes · §1 RPC connection · §2 reports · §3 document grid · §4 settings · §5 `.blib` ·
   §6 import (SkylineCmd) · §7 packaging · §8 project setup · §9 chromatograms · §10 reading the `.sky` XML ·
   §11 embedding a pwiz engine · §12 dev via the `skyline` MCP · §13 checklist · §14 source map.
+- **[docs/installing-a-skyline-tool.md](docs/installing-a-skyline-tool.md)** — **end-user install guide**
+  (non-developer): prerequisites, installing the `.zip` from the Tools menu, running, updating, removing,
+  troubleshooting.
 - **[docs/testing.md](docs/testing.md)** — testing practices (fake RPC seam, hermetic xUnit, ship gate,
   verify-against-real-data, optional live integration).
 

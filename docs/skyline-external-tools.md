@@ -15,6 +15,29 @@ Reference Skyline version for the CLI surface here: **26.1.1** (get it at runtim
 
 ---
 
+## Contents
+
+- [0. Two ways to write a tool — pick one](#0-two-ways-to-write-a-tool--pick-one)
+- [1. Connecting to a running Skyline (JSON-RPC)](#1-connecting-to-a-running-skyline-json-rpc)
+- [2. Reports](#2-reports)
+- [3. Reading the document grid (Replicates, annotations)](#3-reading-the-document-grid-replicates-annotations)
+- [4. Changing document settings & annotations](#4-changing-document-settings--annotations)
+- [5. BLIB spectral libraries (SQLite)](#5-blib-spectral-libraries-sqlite)
+- [6. Importing results, FASTA, libraries, building a blib (SkylineCmd surface)](#6-importing-results-fasta-libraries-building-a-blib-skylinecmd-surface)
+- [7. Packaging & installing the tool](#7-packaging--installing-the-tool)
+- [8. Project setup / NuGet / architecture](#8-project-setup--nuget--architecture)
+- [9. Chromatograms — getting extracted XICs out of Skyline](#9-chromatograms--getting-extracted-xics-out-of-skyline)
+- [10. Reading the raw `.sky` XML directly](#10-reading-the-raw-sky-xml-directly)
+- [11. Embedding a pwiz / ProteoWizard engine in-process (project references)](#11-embedding-a-pwiz--proteowizard-engine-in-process-project-references)
+- [12. Developing against a live Skyline (the `skyline` MCP server)](#12-developing-against-a-live-skyline-the-skyline-mcp-server)
+- [13. Checklist for the next agent](#13-checklist-for-the-next-agent)
+- [14. Source map (where each capability lives)](#14-source-map-where-each-capability-lives)
+
+**Related:** [Installing a Skyline tool (end-user guide)](installing-a-skyline-tool.md) — a friendly,
+non-developer walkthrough for analysts installing a packaged tool `.zip`.
+
+---
+
 ## 0. Two ways to write a tool — pick one
 
 | | **Live JSON-RPC tool** (PRISM `SkylinePrism.App`, cadenza) | **Classic report-macro tool** (`skyline-prism/skyline-external-tool`, Python) |
@@ -341,6 +364,9 @@ TypeInitializationException | DllNotFoundException | BadImageFormatException` an
 "tool started" line. A failed *connection* from the dummy arg is expected; a failed *load* is not.
 
 ### Install
+> For an **end-user** (analyst) walkthrough of installing the packaged `.zip` — prerequisites, the
+> Tools-menu steps, updating, and troubleshooting — see [installing-a-skyline-tool.md](installing-a-skyline-tool.md).
+
 - **UI:** Tools ▸ Tool Store ▸ *Install from file* (pick the zip).
 - **Headless:** `SkylineCmd --tool-add-zip=<zip> --tool-zip-conflict-resolution=overwrite|parallel`
   (`--tool-zip-overwrite-annotations`, `--tool-ignore-required-packages`). Add-by-settings without a zip:
