@@ -174,8 +174,87 @@ to probe columns.
 ### PRISM's driver pattern
 1. `EnsureReportsInstalled` → install the `.skyr` files (idempotent, overwrite).
 2. **Parquet-first**: `ExportReport("PRISM","PRISM.parquet","invariant")`, then validate by checking the `PAR1`
-   magic at head+tail; **CSV fallback** (`.csv`) for older Skyline that can't emit parquet.
+   magic at head+tail; **CSV fallback** (`.csv`) whenever that does not yield real parquet — an older
+   Skyline, or the host you are driving (see the next two subsections: `SkylineCmd` cannot).
 3. Invariant everywhere.
+
+### Format is chosen by the FILE EXTENSION — not by a format argument
+
+Both `ExportReport` (RPC) and `SkylineCmd --report-file=…` dispatch on the output extension.
+**There is no `--report-format=parquet`** — that flag validates against `csv|tsv` and rejects anything
+else (`The value 'parquet' is not valid for the argument --report-format. Use one of csv, tsv`). To get
+parquet on the command line, pass `--report-file=out.parquet` and **omit `--report-format` entirely**.
+Always verify the `PAR1` magic and keep a CSV fallback rather than trusting the exit code.
+
+#### Driving Skyline headlessly: `SkylineRunner` beats `SkylineCmd`
+
+There are two ways to run Skyline command-line arguments against a document that is **not open**, and they
+are not equivalent:
+
+| | `SkylineCmd.exe` | **SkylineRunner** (recommended) |
+|---|---|---|
+| What runs | a small stand-alone host | the **installed `Skyline.exe`**, UI-less |
+| Config file | `SkylineCmd.exe.config` | `Skyline.exe.config` |
+| Parquet report export | ✗ broken (see below) | ✓ works |
+| Startup | fast (~2 s) | slower (~6 s; full app + update check) |
+| Exit code | real process exit code | none — parse the output |
+
+**SkylineRunner is a tiny shim, and its protocol is ~40 lines you can reimplement** (pwiz:
+`pwiz_tools/Skyline/Executables/SkylineRunner/Program.cs`). Worth doing, because the official shim is a
+separate download **built per channel** — one binary looks only for `Skyline`, another
+(`SkylineDailyRunner.exe`) only for `Skyline-daily` — so shipping it means shipping the right one, or two.
+Reimplementing lets you probe both:
+
+1. Find the ClickOnce shortcut, trying `Skyline-daily` then `Skyline`, in either layout:
+   `%APPDATA%\Microsoft\Windows\Start Menu\Programs\MacCoss Lab, UW\<App>.appref-ms`, or
+   `…\Programs\<App>\<App>.appref-ms`.
+2. `guid = "-" + Guid.NewGuid()`; launch `cmd.exe /c "<shortcut>" CMD<guid>`
+   (`.appref-ms` is not directly executable; escape `^` and `&` — and then spaces — in the path).
+3. Serve `NamedPipeServerStream("SkylineInputPipe" + guid)`, wait for Skyline to connect, then write
+   `--sw=<width>`, `--dir=<cwd>`, and **one argument per line**. Close the writer.
+4. Connect `NamedPipeClientStream("SkylineOutputPipe" + guid)` and read lines until EOF.
+
+⚠️ **There is no exit code.** The launching `cmd.exe` returns immediately, so the *only* failure signal is
+an `Error:` prefix at the start of an output line (or straight after a tab, when timestamps are on) — plus
+the localized `エラー：` / `错误：`. Get this wrong and a failed export reports success. Reading the output
+pipe to EOF is also how you know the batch finished.
+
+Allow a generous startup timeout: a cold ClickOnce launch plus Skyline's update check can exceed the
+official runner's 15 s.
+
+#### ⚠️ Headless parquet is broken in `SkylineCmd` (use SkylineRunner instead)
+`SkylineCmd --report-file=out.parquet` fails (Skyline-daily 25.1) with:
+
+```text
+Error: Failure attempting to save <Report> report to out.parquet.
+Could not load file or assembly 'Parquet, Version=4.0.0.0, Culture=neutral,
+PublicKeyToken=d380b3dee6d01926' or one of its dependencies. The module was expected to contain an
+assembly manifest.
+```
+
+The parquet code path **is** reached — this is a deployment bug, not a missing feature. In the Skyline
+application folder the managed Parquet.Net assembly ships as **`ParquetNet.dll`** (identity `Parquet,
+Version=4.0.0.0`) while a **native** `parquet.dll` sits beside it and owns the default probe path (the
+filesystem is case-insensitive), so the CLR loads the native DLL and finds no assembly manifest.
+`Skyline.exe.config` resolves this with an explicit binding; `SkylineCmd.exe.config` has **no
+`<assemblyBinding>` section at all**, so the GUI/RPC path works and the CLI does not.
+
+Verified fix — copy these eight `dependentAssembly` entries from `Skyline.exe.config` into
+`SkylineCmd.exe.config` (the `Parquet` `codeBase` alone is *not* enough; the dependency redirects are
+required too, or it fails with a bare `One or more errors occurred.`):
+
+```xml
+<dependentAssembly>
+  <assemblyIdentity name="Parquet" publicKeyToken="d380b3dee6d01926" culture="neutral" />
+  <codeBase version="4.0.0.0" href="ParquetNet.dll" />
+</dependentAssembly>
+<!-- plus bindingRedirects for: IronCompress, Microsoft.IO.RecyclableMemoryStream, System.Buffers,
+     System.Memory, System.Numerics.Vectors, System.Runtime.CompilerServices.Unsafe,
+     System.Threading.Tasks.Extensions -->
+```
+
+With that in place the same report exported **61 KB of parquet vs 946 KB of CSV**. Until Skyline ships
+the fix, a tool should just try `.parquet` and fall back to CSV — no version check needed.
 
 > Reports give tabular **aggregates** (areas, RTs, scores). For the raw **chromatogram point-arrays**
 > (XIC traces) that a peak-picking / detection / re-scoring tool needs, see **§9**.
@@ -209,11 +288,38 @@ SampleName, ModifiedTime, AcquiredTime, SampleType, AnalyteConcentration, BatchN
 **Any column not in that set is a user annotation** — carry those through verbatim (they're the experiment
 design: Condition, Subject, Batch, …). PRISM curates the useful built-ins and always keeps the annotations.
 
-### Annotation column naming
-When requesting an annotation column in an ad-hoc `.skyr` you must prefix it: `annotation_<Name>` (e.g.
-`annotation_Condition`). Because the built-in Replicates view isn't RPC-exportable, PRISM synthesizes a
-Replicate `.skyr` on the fly that `<column name="annotation_Batch" />`, installs it with `--report-add`, then
-exports it.
+### Annotation column naming — ⚠️ prefix it **and quote it**
+
+When requesting an annotation column in an ad-hoc `.skyr` you must prefix it (`annotation_<Name>`) **and
+wrap it in quotes**:
+
+```xml
+<column name="&quot;annotation_Condition&quot;" />   <!-- correct -->
+<column name="annotation_Condition" />               <!-- REJECTED -->
+```
+
+Skyline parses `column/@name` as a databinding **PropertyPath**, whose bare-identifier syntax does not
+allow `_` — and the `annotation_` prefix itself contains one, so *every* annotation column needs the
+quotes. Unquoted, the export dies with:
+
+```text
+Error: Failure attempting to save <View> report to <path>.
+Error parsing annotation_Condition at location 10: Invalid character _
+```
+
+and **no file is written** — so an annotation silently never reaches your metadata (the failure looks
+like "the report came back without that column"). Quoted, the exported column is headed with the plain
+annotation name (`Condition`). This is the same quoting Skyline itself uses for property names with
+special characters in saved views, e.g.
+`<column name="Results!*.Value.PeptideResult.&quot;rdotp_Light:Heavy&quot;" />`.
+
+Verified against `SkylineCmd --report-add … --report-name … --report-file …` on a real document
+(quoted → OK; bare → the error above; `Annotations.<Name>` → also rejected;
+`Replicate."annotation_<Name>"` → exports a `#COLUMN … NOT FOUND#` placeholder).
+
+Because the built-in Replicates view isn't RPC-exportable, PRISM synthesizes a Replicate `.skyr` on the
+fly (`ReplicatesReportBuilder`), installs it with `--report-add`, then exports it — the same builder
+feeds both the live-RPC path and the headless `SkylineCmd` path.
 
 ---
 
@@ -336,7 +442,10 @@ protein before write-back.
 command file against one open document), `--log-file`, `--timestamp`, `--memstamp`.
 
 **Reports (headless):** `--report-name` + `--report-file` + `--report-format=csv|tsv` + `--report-invariant`;
-`--report-add=<file>.skyr` + `--report-conflict-resolution=overwrite|skip`.
+`--report-add=<file>.skyr` + `--report-conflict-resolution=overwrite|skip`. For **parquet**, omit
+`--report-format` and give `--report-file` a `.parquet` extension — but see §2 ("Format is chosen by the
+FILE EXTENSION"): headless parquet is currently broken by a missing binding in `SkylineCmd.exe.config`.
+`--report-name` takes ONE report, so exporting two reports means loading the document twice.
 
 ---
 

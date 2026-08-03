@@ -18,10 +18,31 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - Reports/RPC: pass `culture = "invariant"` for machine consumption.
 - **Never set `InvariantGlobalization=true`** — WPF text rendering throws `CultureNotFoundException`.
 
+## Reports & annotation columns (§2, §3)
+- **Annotation columns in a `.skyr` must be prefixed AND quoted** —
+  `<column name="&quot;annotation_Batch&quot;" />`. `column/@name` is a databinding PropertyPath whose
+  bare-identifier syntax rejects `_`, and `annotation_` contains one. Unquoted → *"Error parsing
+  annotation_Batch at location 10: Invalid character _"* and **no report file is written** (looks like a
+  missing column, not a failure).
+- **Parquet is chosen by the FILE EXTENSION, never by `--report-format`** (which takes only `csv|tsv`) —
+  in both `ExportReport` (RPC) and `--report-file=….parquet` headless. Always validate the `PAR1` magic
+  at head+tail and keep a CSV fallback: a failed parquet write can still leave a stub.
+- **Headless: drive `Skyline.exe` (SkylineRunner), not `SkylineCmd.exe`.** SkylineCmd's parquet export is
+  broken — `SkylineCmd.exe.config` lacks the Parquet.Net `<assemblyBinding>` that `Skyline.exe.config`
+  has (the managed assembly ships as `ParquetNet.dll` and needs a `codeBase`, because a *native*
+  `parquet.dll` owns the default probe path) → *"Could not load file or assembly 'Parquet' … expected to
+  contain an assembly manifest."* The SkylineRunner protocol (§2) runs the real app, so parquet works.
+- **SkylineRunner has no exit code** — the launcher `cmd.exe` returns immediately. Detect failure from an
+  `Error:` prefix at line start (or after a tab) in the piped output, or you will report failures as
+  successes.
+
 ## SkylineCmd via RunCommand (§4, §6)
 - **One flag per `RunCommand` batch** — SkylineCmd aborts the *whole batch* on the first bad arg. EXCEPT
   mutually-validated fields (DIA acquisition-method + isolation-scheme; MS1 count + analyzer + ppm) which
   must go together.
+- **`SkylineCmd.exe` lives next to `Skyline(-daily).exe`** in the ClickOnce *application* folder
+  (`%LOCALAPPDATA%\Apps\2.0\**\skyl..tion_*\`); the copy in the sibling `…exe_…` folders fails with
+  *"Unable to find Skyline.exe"*. Pick the newest, and never pass `--save` when reading a user's document.
 
 ## `.blib` SQLite (§5)
 - **`Pooling=False`** in the connection string, or you lock the user's library.
