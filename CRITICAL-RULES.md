@@ -43,6 +43,17 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - **`SkylineCmd.exe` lives next to `Skyline(-daily).exe`** in the ClickOnce *application* folder
   (`%LOCALAPPDATA%\Apps\2.0\**\skyl..tion_*\`); the copy in the sibling `…exe_…` folders fails with
   *"Unable to find Skyline.exe"*. Pick the newest, and never pass `--save` when reading a user's document.
+- **Any command that writes settings runs against a `--new` scratch document**, never the user's — a
+  document opened with `--in` and mutated is dirtied even without `--save`.
+
+## DIA isolation windows (§4)
+- **Not in the `.sky`** for a normal analysis document (`<isolation_scheme name="Results only" />` has no
+  windows), and **not in any report column** — `ChromatogramExtractionWidth` is the *product-ion* channel.
+- Get them with **`--full-scan-isolation-scheme=<data file>`** (Skyline reads the vendor file) against a
+  throwaway `--new` document. ~10 s for a 5.2 GB `.raw`.
+- **Never substitute a uniform bin width.** Forbidden-zone edges land at e.g. 400.4319 with widths an
+  integer multiple of ~1.0005 m/z; a round grid is offset ~14% of a window.
+- `GetSettingsListSelectedItems` **throws** for isolation schemes — the active one is a document property.
 
 ## `.blib` SQLite (§5)
 - **`Pooling=False`** in the connection string, or you lock the user's library.

@@ -342,6 +342,134 @@ Send flags **one per `RunCommand` batch** so one bad flag doesn't roll back the 
 Skyline **mutually validates**, which must be sent **together** or each rejects the other (e.g. DIA
 acquisition-method + isolation-scheme; MS1 isotope count + analyzer + ppm). Test empirically.
 
+### Driving the document tree from a plot (click-to-select)
+`SetSelectedElement(locator, additionalLocators)` navigates Skyline's tree, which is what makes a tool's
+plot points clickable. Locator shapes:
+
+```
+MoleculeGroup:/sp|P02768|ALBU_HUMAN          protein
+Molecule:/sp|P35279|RAB6A_MOUSE/LVFLGEQSVGK  peptide (protein / peptide)
+```
+
+⚠️ **Do not build locators by string concatenation.** Protein naming, modified sequences and duplicate
+peptides make it fragile. Read them from Skyline instead — `GetLocations(level, root)` (`"group"` =
+proteins, `"molecule"` = peptides) returns name + locator for every element; read once, cache, and index
+each element under several keys (display name, the locator's trailing segment, and the `sp|…|…` parts) so
+lookups from your own identifiers still hit. Report columns `ProteinLocator` / `PeptideLocator` are the
+alternative source when you are already exporting a report.
+
+### ⚠️ Not every settings list supports `GetSettingsListSelectedItems`
+The settings-list family is not uniform. `GetSettingsListSelectedItems("Enzymes")` works; the same call for
+isolation schemes throws:
+
+```
+Selection is not supported for settings list: Isolation Schemes.
+Use skyline_get_document_settings to see the current document configuration.
+```
+
+For those, the *active* item is a property of the document, not of the list — read it from
+`GetDocumentSettings` or straight from the `.sky` (§10). The list-name spelling also differs between calls:
+`GetSettingsListNames` / `GetSettingsListItem` want the **property** name (`IsolationSchemeList`,
+`EnzymeList`), while `GetSettingsListSelectedItems` wants the **title** (`Enzymes`).
+
+### ⚠️ Getting the DIA isolation windows — they are not where you expect
+A tool that needs to know which precursors were co-fragmented (density maps, interference modelling,
+window-aware QC) needs the acquisition's isolation windows. Three near-misses, then the answer:
+
+| Where you'd look | What you actually get |
+|---|---|
+| `<isolation_scheme>` in the `.sky` | Only when the document *defines* a scheme. A DIA **analysis** document normally says `<isolation_scheme name="Results only" />` — named, **no windows** — because Skyline takes them from the data files at import and never writes them back. |
+| `ChromatogramExtractionWidth` / `ChromatogramPrecursorMz` (Transition Results) | **Not the isolation window.** These are the *product-ion* extraction channel and the chromatogram's target precursor m/z — on real DIA data, ~0.02 Th and the precursor's own m/z. |
+| Any other report column | There isn't one. Precursor, Precursor Result and Transition Result carry no isolation-window column. |
+
+**The answer: `--full-scan-isolation-scheme` accepts a *data file path* in place of a scheme name** — the
+command-line form of Transition Settings ▸ Full-Scan ▸ Isolation scheme ▸ Add ▸ *Import from a data file*.
+Skyline opens the vendor file and reads the windows out of its scan headers, which your tool cannot do.
+
+⚠️ **Run it against a throwaway document, never the user's.** Pointing that flag at their document rewrites
+its Full-Scan settings and dirties it. Use `--new` in a temp directory, save, parse, delete:
+
+```csharp
+runner.Run(new[]
+{
+    "--new=" + tempDoc,                     // scratch document; never --in / --out / --save-as
+    "--overwrite",
+    "--full-scan-acquisition-method=DIA",   // mutually validated with the next flag → same batch
+    "--full-scan-isolation-scheme=" + dataFilePath,
+    "--save",
+}, log, ct);
+// then read <isolation_scheme> out of tempDoc (§10) and delete the temp directory
+```
+
+Measured: **167 windows from a 5.2 GB Thermo `.raw` on a network share in ~10 s** — it reads scan headers,
+not the whole file. Works through either runner, so it needs Skyline *installed*, not *running*. Skyline
+logs one line per window (`Prespecified isolation windows : contains { Start = … }`) — filter those out of
+your own log or they bury everything else. Get the data-file path from `sample_file/@file_path` (§10).
+
+⚠️ **DIA only — check `acquisition_method` first.** The importer looks for a *repeating* isolation cycle.
+On anything else it exits 2 with:
+
+```
+Error: Failed attempting to change the transiton full-scan settings.
+No repeating isolation scheme found in <file>
+```
+
+Scheduled targeted methods (PRM, and multiplexed targeted variants) acquire different windows at different
+retention times, so there is no cycle to find. Read
+`settings_summary/transition_settings/transition_full_scan/@acquisition_method` (§10) and skip the launch
+unless it is `DIA` — cheaper than provoking the error, and it tells your UI what the data actually is.
+
+⚠️ **Do this while the raw files are still reachable, and cache the result.** Resolve the windows during
+the tool's main action (when the user is pointing at live data) and write them to your output directory;
+data gets archived, and a later re-open of those outputs must not depend on the `.raw` still being there.
+
+⚠️ **A scheduled method's window needs an RT dimension.** A DIA cycle repeats across the whole gradient,
+so `[start, end]` per window is complete. A PRM/MTM window fires **only during its scheduled interval**, so
+model a window as *m/z range × RT range* (Cadenza calls it a `Slot`) with the RT bounds absent = "always
+on". Three things follow, and all three are wrong without it:
+
+- Membership must require the peak to elute **while the window fired** — two targets sharing an m/z but
+  scheduled 20 min apart otherwise each land in both slots.
+- Time outside a slot's interval is **not acquired**, which is not the same as "acquired, found nothing".
+  Render it as a gap so a zero always means the slot fired and detected nothing.
+- The time axis should span the **schedule**, not just the detections, or slots that produced nothing
+  vanish — exactly the failure someone is looking for.
+
+**Where a schedule comes from: the instrument's inclusion list.** For a targeted run the Thermo Method
+Editor CSV that was loaded onto the instrument *is* the isolation scheme, and the only complete record of
+it (Skyline stores nothing, and its importer needs a repeating cycle). One row per slot:
+
+```
+Compound, Formula, Adduct, m/z, z, t start (min), t stop (min), Isolation Window (m/z), HCD Collision Energy
+```
+
+`m/z` is the window centre and `Isolation Window (m/z)` its full width, so the window is centre ± width/2;
+`t start`/`t stop` are the firing interval. PRM writes one row per precursor; MTM writes one row per slot
+with the multiplexed members joined in `Compound` — which is why an MTM cell may legitimately hold several
+co-eluting precursors and a PRM cell holds one. Match the headers case/space/underscore-insensitively
+(older exports spell them `t (min)` / `Window (min)`) and parse invariant.
+
+⚠️ **Dynamic DIA is scheduled too** ([PMC10517878](https://pmc.ncbi.nlm.nih.gov/articles/PMC10517878/)):
+a *cycle* of DIA windows (e.g. 8 × 8 m/z) whose m/z positions shift along the gradient to follow where
+peptides elute. Same window model, but several windows share each firing interval, and **the same m/z is
+covered by different windows at different times**. If you rasterize a (window × time) grid for display,
+choose the source window **per cell, not per m/z row** — a per-row choice picks one segment and blanks
+every other one, which looks like missing data rather than a bug. The same trap hits any scheduled method
+whose slots overlap in m/z.
+
+⚠️ **Do not "simplify" this to a uniform bin width.** Real schemes place window edges in the peptide
+*forbidden zones*, so widths are integer multiples of the ~1.0005 averagine spacing and boundaries land on
+values like `400.431890003052`, not `400`. A uniform 3 Th grid anchored at 400 is offset by ~14% of a window
+and cuts through the precursor clusters the design exists to keep intact. Also expect: variable-width and
+deliberately overlapping (staggered/demux) schemes — a precursor in an overlap really was fragmented twice
+— and instrument rounding, where consecutive widths differ in the 4th decimal (3.0013 vs 3.0014). That is
+*one* width; compare at ~0.001 Th before telling the user they have a variable-width scheme.
+
+The XML casing follows the usual split: `GetSettingsListItem("IsolationSchemeList", name)` returns
+PascalCase `<IsolationScheme>`, the `.sky` stores snake_case `<isolation_scheme>`; both hold
+`<isolation_window start= end= margin= />` children. Match element/attribute names **case-insensitively**
+and parse the numbers invariant.
+
 ---
 
 ## 5. BLIB spectral libraries (SQLite)
@@ -632,6 +760,18 @@ source can be a file **or** a `.d` directory). **If a raw file is missing, tell 
 therefore unavailable** rather than silently producing a smaller result — e.g. features that need the
 observed MS2 spectra can't be computed when the raw has moved. Graceful degradation + a clear warning
 beats a silently truncated answer.
+
+⚠️ **These paths go stale, and often the data is simply beside the document.** They record where the files
+were *at import time*; data gets archived, or the whole project is moved to another share. Before
+declaring a raw file missing, retry `Path.Combine(directoryOf(.sky), fileName(recordedPath))` — a real
+cohort recorded `Y:\…\run.raw` while the files sat next to the `.sky` on `V:`, and that one fallback was
+the difference between "windows read from the data" and "ask the user".
+
+⚠️ **Capturing an element *with its children* breaks a `while (reader.Read())` loop.** `ReadOuterXml()` (or
+`XNode.ReadFrom`) leaves the reader on the node *after* the element, so the loop's next `Read()` skips one
+node. If your parser is the usual advance-every-iteration shape, either restructure it to control
+advancement, or give the multi-child element its **own** small pass over the file (cheap — it still stops
+at `</settings_summary>`). Attribute-only elements like `<enzyme …/>` don't have this problem.
 
 ---
 
