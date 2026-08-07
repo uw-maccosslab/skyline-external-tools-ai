@@ -12,6 +12,16 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - **`pipe.ReadMode = PipeTransmissionMode.Message`** — mandatory, or the response read never completes.
 - Same `0x00` symptom → it's one of these three.
 
+## Selection sync (§4)
+- **There are no events — poll.** The transport is request/response only; Skyline never calls you back,
+  so a plot that follows the selection must ask. Poll **only while the view is on screen**, off the UI
+  thread, never overlapping the previous poll, and stop on close.
+- **`GetSelectedElementLocator(type)` returns the ANCESTOR at that level** — ask for the level your plot
+  shows (`MoleculeGroup` / `Molecule`) and let Skyline walk the tree, instead of parsing what the user
+  clicked. Verified: with a peptide selected, `MoleculeGroup` → `MoleculeGroup:/sp|P58252|EF2_MOUSE`.
+- **Resolve both directions through the same `GetLocations` map** so following a selection is a dictionary
+  hit on a string Skyline produced, not a second naming scheme that drifts from the first.
+
 ## Culture & globalization (§8)
 - **`CultureInfo.InvariantCulture` in every data parse/format path.** Skyline exports invariant
   (`.` decimal, `6.4E+07`); parse/write invariant.
@@ -102,4 +112,6 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - Parse localized numbers / omit InvariantCulture.
 - Set `InvariantGlobalization=true`.
 - Leave `.blib` connection pooling on.
+- Poll Skyline from a view that is not on screen, or on the UI thread.
+- Block the user's real work on an optional enrichment.
 - Ship without the launch-verify gate.

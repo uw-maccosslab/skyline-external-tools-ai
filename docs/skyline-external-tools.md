@@ -358,6 +358,51 @@ each element under several keys (display name, the locator's trailing segment, a
 lookups from your own identifiers still hit. Report columns `ProteinLocator` / `PeptideLocator` are the
 alternative source when you are already exporting a report.
 
+### Following the tree from your plot (the other direction)
+
+Making a plot *follow* Skyline's selection is the natural companion to click-to-select, and it is easy
+once you know two things.
+
+**1. There are no events.** The JSON-RPC transport is strictly request/response over a pipe you open per
+call (§1) — Skyline never calls you back, so there is no "selection changed" notification to subscribe
+to. **You must poll.**
+
+**2. `GetSelectedElementLocator(elementType)` resolves the ANCESTOR at the level you ask for,** which is
+what makes polling cheap and simple. Ask for the level *your plot shows* and let Skyline walk the tree;
+do not ask what the user clicked and then parse the locator yourself. Measured against a live document
+with a **peptide** selected in the Targets tree:
+
+```
+GetSelectedElementLocator("MoleculeGroup")  ->  MoleculeGroup:/sp|P58252|EF2_MOUSE
+GetSelectedElementLocator("Molecule")       ->  Molecule:/sp|P58252|EF2_MOUSE/TGTITTFEHAHNMR
+GetSelectedElementLocator("Precursor")      ->  (null)
+GetSelectedElementLocator("Transition")     ->  (null)
+```
+
+So a protein-level plot highlights the right protein whether the user selected the protein, one of its
+peptides, a precursor or a transition. Nothing selected at that level returns null (or empty — normalize
+both), which is a normal state, not an error.
+
+⚠️ **Resolve your own points through the SAME `GetLocations` map** you use for click-to-select, and index
+locator → point. Then following a selection is a dictionary hit on a string Skyline itself produced. Match
+your identifiers against the locator by hand and you have a second, independent naming scheme that will
+eventually disagree with the first.
+
+Polling rules that matter in practice:
+
+- **Only while the view is actually on screen**, and stop on window close. A background timer hitting a
+  busy Skyline forever is a bug, not a feature. ~0.75 s is responsive without being noisy.
+- **Off the UI thread.** The call opens a pipe and waits on an application that may be mid-import; doing
+  that on the UI thread freezes your window.
+- **Never let one poll overlap the previous one** (a simple in-flight flag). A Skyline that has gone slow
+  should make your polling quieter, not queue up requests behind it.
+- **Ignore failures and retry next tick.** Mid-document-change, busy, or closing all throw; none of them
+  deserve an error dialog.
+
+Document grids come along for free *if* Skyline's grid↔tree selection sync is on (it is by default):
+selecting a row moves the tree selection, which is what you are reading. Worth confirming for the grid you
+care about — only the Targets-tree path was measured here.
+
 ### ⚠️ Not every settings list supports `GetSettingsListSelectedItems`
 The settings-list family is not uniform. `GetSettingsListSelectedItems("Enzymes")` works; the same call for
 isolation schemes throws:
