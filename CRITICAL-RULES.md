@@ -35,6 +35,17 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - **SkylineRunner has no exit code** — the launcher `cmd.exe` returns immediately. Detect failure from an
   `Error:` prefix at line start (or after a tab) in the piped output, or you will report failures as
   successes.
+- **…but use `SkylineCmd` for SETTINGS-ONLY work** (§4) — the rule above is about parquet, and a settings
+  probe writes no report. Reading DIA isolation windows from a 4.9 GB `.raw`: **SkylineCmd 8.7 s, exit 0**;
+  the same flags through the app runner printed `File … opened.` and then nothing, still silent at 5 min.
+  Full app for reports, SkylineCmd for probes.
+- **Put a DEADLINE on every headless call.** No exit code and output-pipe-only reporting (above) means a
+  stall looks exactly like slow work — a blocking `ReadLine` on that pipe hangs forever and never sees
+  cancellation. Read on a worker, wake on a timer, and kill the Skyline you started when you give up
+  (it is not your child process: the ClickOnce launcher exits immediately, so find it by diffing the
+  process list around launch and requiring `MainWindowHandle == 0`, or you may kill the user's).
+- **Never block the user's real work on an optional probe.** If the data is an enrichment (a plot's
+  metadata, say), run it alongside the main job, not in front of it.
 
 ## SkylineCmd via RunCommand (§4, §6)
 - **One flag per `RunCommand` batch** — SkylineCmd aborts the *whole batch* on the first bad arg. EXCEPT

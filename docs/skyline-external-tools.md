@@ -401,10 +401,25 @@ runner.Run(new[]
 // then read <isolation_scheme> out of tempDoc (§10) and delete the temp directory
 ```
 
-Measured: **167 windows from a 5.2 GB Thermo `.raw` on a network share in ~10 s** — it reads scan headers,
-not the whole file. Works through either runner, so it needs Skyline *installed*, not *running*. Skyline
-logs one line per window (`Prespecified isolation windows : contains { Start = … }`) — filter those out of
-your own log or they bury everything else. Get the data-file path from `sample_file/@file_path` (§10).
+Measured: **167 windows from a 5.2 GB Thermo `.raw` on a network share in ~9 s** — it reads scan headers,
+not the whole file. It needs Skyline *installed*, not *running*. Skyline logs one line per window
+(`Prespecified isolation windows : contains { Start = … }`) — filter those out of your own log or they
+bury everything else. Get the data-file path from `sample_file/@file_path` (§10).
+
+⚠️ **Run this through `SkylineCmd`, not the SkylineRunner/app runner** — the one place the usual
+preference is inverted. §2 says to drive the full `Skyline.exe` because it is the only runner that can
+export parquet; that reason does not apply to a settings-only probe, and going through the application
+here *hangs*. Same machine, same 4.9 GB `.raw`, same flags:
+
+| Runner | Result |
+|---|---|
+| `SkylineCmd.exe` | 167 windows in **8.7 s**, exit 0 |
+| SkylineRunner protocol (full app) | printed `File isolation-probe.sky opened.` and then **nothing** — still silent when killed at 5 minutes |
+
+The app runner never reached `Reading isolation scheme from …`. And because that protocol has no exit
+code and reports only through its output pipe, a stall there is indistinguishable from slow work — you
+find out by waiting. So: **full app for reports, `SkylineCmd` for settings probes**, and put a deadline on
+whichever you use.
 
 ⚠️ **DIA only — check `acquisition_method` first.** The importer looks for a *repeating* isolation cycle.
 On anything else it exits 2 with:
