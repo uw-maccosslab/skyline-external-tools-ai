@@ -45,10 +45,11 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - **SkylineRunner has no exit code** — the launcher `cmd.exe` returns immediately. Detect failure from an
   `Error:` prefix at line start (or after a tab) in the piped output, or you will report failures as
   successes.
-- **…but use `SkylineCmd` for SETTINGS-ONLY work** (§4) — the rule above is about parquet, and a settings
-  probe writes no report. Reading DIA isolation windows from a 4.9 GB `.raw`: **SkylineCmd 8.7 s, exit 0**;
-  the same flags through the app runner printed `File … opened.` and then nothing, still silent at 5 min.
-  Full app for reports, SkylineCmd for probes.
+- **…but the SkylineRunner path can STALL — prefer `SkylineCmd` wherever parquet is not needed** (§4).
+  Observed on Skyline-daily 26.1.1.209: `SkylineDailyRunner.exe --new=x.sky --overwrite --save` prints
+  `File x.sky opened.` and then nothing, forever, never writing the file — while `SkylineCmd.exe` runs the
+  identical arguments in 0.9 s. Reproduces with the OFFICIAL runner, so it is not a protocol
+  reimplementation bug. Not command-specific; root cause unknown.
 - **Put a DEADLINE on every headless call.** No exit code and output-pipe-only reporting (above) means a
   stall looks exactly like slow work — a blocking `ReadLine` on that pipe hangs forever and never sees
   cancellation. Read on a worker, wake on a timer, and kill the Skyline you started when you give up

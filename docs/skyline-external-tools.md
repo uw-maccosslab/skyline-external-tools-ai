@@ -451,20 +451,33 @@ not the whole file. It needs Skyline *installed*, not *running*. Skyline logs on
 (`Prespecified isolation windows : contains { Start = … }`) — filter those out of your own log or they
 bury everything else. Get the data-file path from `sample_file/@file_path` (§10).
 
-⚠️ **Run this through `SkylineCmd`, not the SkylineRunner/app runner** — the one place the usual
-preference is inverted. §2 says to drive the full `Skyline.exe` because it is the only runner that can
-export parquet; that reason does not apply to a settings-only probe, and going through the application
-here *hangs*. Same machine, same 4.9 GB `.raw`, same flags:
+⚠️ **Known stall: the SkylineRunner path can hang, and `SkylineCmd` is the workaround.** This was first
+hit on the isolation import, which is why it is recorded here, but it is **not specific to this command** —
+see the box below. Measured on the affected machine, same 4.9 GB `.raw`, same flags: `SkylineCmd.exe`
+returned 167 windows in **8.7 s** and exit 0; the SkylineRunner path printed `File isolation-probe.sky
+opened.` and then **nothing**, still silent when killed at 5 minutes, never reaching `Reading isolation
+scheme from …`.
 
-| Runner | Result |
-|---|---|
-| `SkylineCmd.exe` | 167 windows in **8.7 s**, exit 0 |
-| SkylineRunner protocol (full app) | printed `File isolation-probe.sky opened.` and then **nothing** — still silent when killed at 5 minutes |
-
-The app runner never reached `Reading isolation scheme from …`. And because that protocol has no exit
-code and reports only through its output pipe, a stall there is indistinguishable from slow work — you
-find out by waiting. So: **full app for reports, `SkylineCmd` for settings probes**, and put a deadline on
-whichever you use.
+> **⚠️ SkylineRunner stalling after the first output line (Skyline-daily 26.1.1.209, Windows 11)**
+>
+> The stall is not about which command you send. The most trivial command possible does it too:
+>
+> ```
+> SkylineDailyRunner.exe --new=x.sky --overwrite --save
+>   -> "File x.sky opened."
+>   -> nothing; the file is never written; the process never exits
+> ```
+>
+> The same three arguments through `SkylineCmd.exe` complete in **0.9 s** and write the file. It
+> reproduces with the **official** `SkylineDailyRunner.exe`, so it is not a defect in a reimplementation
+> of the protocol, and it happened with an interactive Skyline-daily open at the time (an untested
+> variable). Root cause unknown; raised with the Skyline developers.
+>
+> Practical consequences for a tool:
+> - Prefer `SkylineCmd` for anything that does not need parquet. It is unaffected.
+> - Where you *do* need parquet (report export, §2), keep the app runner but give it a **deadline** and a
+>   documented fallback — the protocol has no exit code and reports only through its output pipe, so a
+>   stall is indistinguishable from slow work until you time out.
 
 ⚠️ **DIA only — check `acquisition_method` first.** The importer looks for a *repeating* isolation cycle.
 On anything else it exits 2 with:
