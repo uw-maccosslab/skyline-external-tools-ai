@@ -81,6 +81,9 @@ function Invoke-Case {
     $sw.Stop()
 
     Write-Host $Label
+    # Echo the command verbatim. A repro that only prints a label asks the reader to take the
+    # description on trust - and the arguments are the thing under test here.
+    Write-Host ("  command : " + (Split-Path $Exe -Leaf) + " " + ($quoted -join " "))
     Write-Host "  expected: $Expect"
     Write-Host ("  actual  : " + $(if ($exited) { "exited code=$($p.ExitCode) after {0:N1}s" -f $sw.Elapsed.TotalSeconds }
                                    else { "STALLED - still running after {0:N0}s" -f $sw.Elapsed.TotalSeconds }))
