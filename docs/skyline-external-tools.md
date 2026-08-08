@@ -196,8 +196,22 @@ are not equivalent:
 | What runs | a small stand-alone host | the **installed `Skyline.exe`**, UI-less |
 | Config file | `SkylineCmd.exe.config` | `Skyline.exe.config` |
 | Parquet report export | ✗ broken (see below) | ✓ works |
+| `--in=<existing>.sky` | ✓ | ✓ (~1.6 s incl. a parquet report) |
+| `--new=<scratch>.sky` | ✓ (~0.9 s) | ✗ **HANGS** (§4) |
+| Sees reports a tool installed into user settings | ✗ | ✓ |
 | Startup | fast (~2 s) | slower (~6 s; full app + update check) |
 | Exit code | real process exit code | none — parse the output |
+
+So "recommended" is about **parquet**, and only for `--in`. Pick per job:
+
+| Job | Use | Why |
+|---|---|---|
+| Report from an **open** document | **live RPC** `ExportReport` (§2) | parquet, no process launch, unaffected by the `--new` stall |
+| Report from a **closed** document | **SkylineRunner** `--in` | the only headless path that writes parquet |
+| Anything against a **scratch** document (`--new`) | **SkylineCmd** | `--new` hangs through the runner |
+| A `--new` command that also needs parquet | *(no good option)* | SkylineCmd cannot write parquet; the runner hangs on `--new`. Do it against an open document over RPC, or wait for the fix. |
+
+That last row is a real gap, not an oversight — worth knowing before you design around it.
 
 **SkylineRunner is a tiny shim, and its protocol is ~40 lines you can reimplement** (pwiz:
 `pwiz_tools/Skyline/Executables/SkylineRunner/Program.cs`). Worth doing, because the official shim is a

@@ -37,6 +37,9 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - **Parquet is chosen by the FILE EXTENSION, never by `--report-format`** (which takes only `csv|tsv`) —
   in both `ExportReport` (RPC) and `--report-file=….parquet` headless. Always validate the `PAR1` magic
   at head+tail and keep a CSV fallback: a failed parquet write can still leave a stub.
+- **Pick the entry point by the JOB, not by habit** (§2): open document -> live RPC; closed document
+  report -> SkylineRunner (`--in`); scratch document (`--new`) -> SkylineCmd. A `--new` command that also
+  needs parquet has NO working option today.
 - **Headless: drive `Skyline.exe` (SkylineRunner), not `SkylineCmd.exe`.** SkylineCmd's parquet export is
   broken — `SkylineCmd.exe.config` lacks the Parquet.Net `<assemblyBinding>` that `Skyline.exe.config`
   has (the managed assembly ships as `ParquetNet.dll` and needs a `codeBase`, because a *native*
