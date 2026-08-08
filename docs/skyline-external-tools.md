@@ -458,9 +458,7 @@ returned 167 windows in **8.7 s** and exit 0; the SkylineRunner path printed `Fi
 opened.` and then **nothing**, still silent when killed at 5 minutes, never reaching `Reading isolation
 scheme from …`.
 
-> **⚠️ SkylineRunner stalling after the first output line (Skyline-daily 26.1.1.209, Windows 11)**
->
-> The stall is not about which command you send. The most trivial command possible does it too:
+> **⚠️ `--new` through SkylineRunner hangs (Skyline-daily 26.1.1.209, Windows 11)**
 >
 > ```
 > SkylineDailyRunner.exe --new=x.sky --overwrite --save
@@ -468,16 +466,24 @@ scheme from …`.
 >   -> nothing; the file is never written; the process never exits
 > ```
 >
-> The same three arguments through `SkylineCmd.exe` complete in **0.9 s** and write the file. It
-> reproduces with the **official** `SkylineDailyRunner.exe`, so it is not a defect in a reimplementation
-> of the protocol, and it happened with an interactive Skyline-daily open at the time (an untested
-> variable). Root cause unknown; raised with the Skyline developers.
+> Two controls, same machine, same minute, show how narrow this is:
 >
-> Practical consequences for a tool:
-> - Prefer `SkylineCmd` for anything that does not need parquet. It is unaffected.
-> - Where you *do* need parquet (report export, §2), keep the app runner but give it a **deadline** and a
->   documented fallback — the protocol has no exit code and reports only through its output pipe, so a
->   stall is indistinguishable from slow work until you time out.
+> | Command | Result |
+> |---|---|
+> | `SkylineCmd.exe --new=x.sky --overwrite --save` | exit 0 in **0.9 s**, file written |
+> | `SkylineDailyRunner.exe --in=<existing>.sky --report-name=PRISM --report-file=out.parquet` | exit 0 in **1.6 s**, valid parquet |
+> | `SkylineDailyRunner.exe --new=…` | **hangs** |
+>
+> So the runner is fine, the protocol is fine, and **report export from a closed document is
+> unaffected** — it is `--new` specifically. It reproduces with the **official** runner
+> (`repro/skylinerunner-stall-repro.ps1` runs all of the above side by side), so it is not a defect in
+> a reimplementation. An interactive Skyline-daily was open throughout, which is the obvious untested
+> variable. Root cause unknown; raised with the Skyline developers.
+>
+> Practical consequence: **drive scratch-document work (`--new`) with `SkylineCmd`.** Keep the runner
+> for report export, where its parquet support is the whole point - and give every headless call a
+> **deadline** anyway, because the protocol has no exit code and reports only through its output pipe,
+> so a stall is indistinguishable from slow work until you time out.
 
 ⚠️ **DIA only — check `acquisition_method` first.** The importer looks for a *repeating* isolation cycle.
 On anything else it exits 2 with:

@@ -45,11 +45,17 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - **SkylineRunner has no exit code** — the launcher `cmd.exe` returns immediately. Detect failure from an
   `Error:` prefix at line start (or after a tab) in the piped output, or you will report failures as
   successes.
-- **…but the SkylineRunner path can STALL — prefer `SkylineCmd` wherever parquet is not needed** (§4).
+- **`--new` through the SkylineRunner path HANGS; use `SkylineCmd` for scratch documents** (§4).
   Observed on Skyline-daily 26.1.1.209: `SkylineDailyRunner.exe --new=x.sky --overwrite --save` prints
-  `File x.sky opened.` and then nothing, forever, never writing the file — while `SkylineCmd.exe` runs the
-  identical arguments in 0.9 s. Reproduces with the OFFICIAL runner, so it is not a protocol
-  reimplementation bug. Not command-specific; root cause unknown.
+  `File x.sky opened.` and then nothing, forever, never writing the file. Same machine, same minute:
+  `SkylineCmd.exe` runs the identical arguments in 0.9 s, and the runner runs `--in=<existing>.sky` +
+  a parquet report export in 1.6 s, exit 0. So `--in` is fine and report export is unaffected — it is
+  `--new` specifically. Reproduces with the OFFICIAL runner (`repro/`), so it is not a reimplementation
+  bug. Root cause unknown.
+- **Quote any argument containing a space yourself.** BOTH entry points re-split their command line:
+  `--report-name=Peptide Ratio Results` arrives as `Peptide` unless the whole parameter is quoted.
+- **`SkylineCmd` does not see reports a tool installed into Skyline's user settings.** The same
+  `--report-name=PRISM` that exports through the runner fails there with "The report PRISM does not exist".
 - **Put a DEADLINE on every headless call.** No exit code and output-pipe-only reporting (above) means a
   stall looks exactly like slow work — a blocking `ReadLine` on that pipe hangs forever and never sees
   cancellation. Read on a worker, wake on a timer, and kill the Skyline you started when you give up
