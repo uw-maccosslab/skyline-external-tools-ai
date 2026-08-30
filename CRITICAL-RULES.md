@@ -37,6 +37,13 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
 - **Parquet is chosen by the FILE EXTENSION, never by `--report-format`** (which takes only `csv|tsv`) —
   in both `ExportReport` (RPC) and `--report-file=….parquet` headless. Always validate the `PAR1` magic
   at head+tail and keep a CSV fallback: a failed parquet write can still leave a stub.
+- **`PAR1` says the bytes are parquet, NOT that this run wrote them** (§2). Exports go to a stable path,
+  so the *previous* run's file is normally already there — a failed export then passes it off as its own.
+  PRISM logged `Exported … 1,377,315,301 bytes, parquet` after an export that never reached Skyline, and
+  analysed a report 25 days stale from a since-re-integrated document. **Delete the target first AND
+  require it to have changed** (length + last-write-time); a locked file on a share defeats the delete, a
+  partial write defeats the change check. Applies to every artefact, including the quiet ones — stale
+  replicate metadata still computes, it just uses an older document's sample types.
 - **Pick the entry point by the JOB, not by habit** (§2): open document -> live RPC; closed document
   report -> SkylineRunner (`--in`); scratch document (`--new`) -> SkylineCmd. A `--new` command that also
   needs parquet has NO working option today.
@@ -64,6 +71,19 @@ The handful of things that, if you get them wrong, cost hours. Each is a hard-wo
   cancellation. Read on a worker, wake on a timer, and kill the Skyline you started when you give up
   (it is not your child process: the ClickOnce launcher exits immediately, so find it by diffing the
   process list around launch and requiring `MainWindowHandle == 0`, or you may kill the user's).
+- **…but SKIP that kill when another headless call is in flight** (§2). The process diff assumes you are
+  the only one launching; with two exports running, each one's "new, windowless Skyline" may be the
+  other's. Nothing distinguishes them — not a parent handle, not the pipe. Count in-flight calls and do
+  not kill when it is more than one: a leaked Skyline costs memory, killing a live export costs the run.
+- **Never unblock `WaitForConnection()` with a dummy client** (§2). The synchronous overload has no
+  timeout, so releasing the abandoned waiter by connecting to your own pipe looks tempting — but the
+  waiter counts that as Skyline, the wait reports success, and you write the arguments to an already-
+  disposed client: *`Pipe is broken.`* A timeout in disguise, and a race, so two calls failing for one
+  reason report it two ways. Use `WaitForConnectionAsync(token)` with `PipeOptions.Asynchronous`.
+- **90 s is not a generous startup timeout.** A cold ClickOnce start competing with another export
+  streaming a multi-GB report over a share blows past it (measured, §2). Wait ~3 min, then extend to a
+  hard cap while a Skyline you started is *visible in the process list*, and report "did not start"
+  separately from "started but never connected" — they send the reader to different places.
 - **Never block the user's real work on an optional probe.** If the data is an enrichment (a plot's
   metadata, say), run it alongside the main job, not in front of it.
 

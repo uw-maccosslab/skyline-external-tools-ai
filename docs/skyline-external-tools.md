@@ -174,9 +174,36 @@ to probe columns.
 ### PRISM's driver pattern
 1. `EnsureReportsInstalled` → install the `.skyr` files (idempotent, overwrite).
 2. **Parquet-first**: `ExportReport("PRISM","PRISM.parquet","invariant")`, then validate by checking the `PAR1`
-   magic at head+tail; **CSV fallback** (`.csv`) whenever that does not yield real parquet — an older
-   Skyline, or the host you are driving (see the next two subsections: `SkylineCmd` cannot).
+   magic at head+tail **and that this run wrote the file**; **CSV fallback** (`.csv`) whenever that does not
+   yield real parquet — an older Skyline, or the host you are driving (see the next two subsections:
+   `SkylineCmd` cannot).
 3. Invariant everywhere.
+
+##### ⚠️ `PAR1` proves the bytes are parquet, not that YOU wrote them
+
+Validating the magic marker asks whether the file at that path is parquet. It does not ask whether the
+export you just ran produced it — and export outputs are written to a stable, predictable path, so a
+**previous** run's file is normally sitting right there.
+
+Observed in PRISM: a headless export failed before Skyline received its arguments, the parquet from an
+earlier run was still on disk, and the tool logged `Exported … 1,377,315,301 bytes, parquet` and fed it to
+the pipeline. A 2-plate cohort was analysed against a report exported 25 days earlier, from a version of
+the `.sky` that had since been re-integrated. Nothing in the log said so; the failure line above it said
+"falling back to CSV", and the CSV fallback then "succeeded" the same way.
+
+So **delete the target before the export, and require the file to have changed afterwards** (existence
+plus length plus last-write-time is enough). Deleting alone is not sufficient — a locked file on a network
+share leaves the stale copy in place — and the change check alone is not sufficient either, because a
+partial write can leave a valid-looking prefix. Do both.
+
+This applies to every artefact the export produces, not just the headline one: PRISM had the same bug on
+the replicate-metadata CSV, where adopting a stale file is *quieter*, because the numbers still compute —
+you just get sample types and batches from an older document.
+
+If you cache exports deliberately (skip re-exporting an unchanged document), keep that one path as the
+**only** place a previous file may be adopted, and gate it on the document's own size/timestamp plus your
+tool version. A freshness check on the failure path and a deliberate cache on the success path are
+different mechanisms; do not let the first quietly do the job of the second.
 
 ### Format is chosen by the FILE EXTENSION — not by a format argument
 
@@ -184,7 +211,8 @@ Both `ExportReport` (RPC) and `SkylineCmd --report-file=…` dispatch on the out
 **There is no `--report-format=parquet`** — that flag validates against `csv|tsv` and rejects anything
 else (`The value 'parquet' is not valid for the argument --report-format. Use one of csv, tsv`). To get
 parquet on the command line, pass `--report-file=out.parquet` and **omit `--report-format` entirely**.
-Always verify the `PAR1` magic and keep a CSV fallback rather than trusting the exit code.
+Always verify the `PAR1` magic *and the file's freshness* (above) and keep a CSV fallback, rather than
+trusting the exit code.
 
 #### Driving Skyline headlessly: `SkylineRunner` beats `SkylineCmd`
 
@@ -233,8 +261,53 @@ an `Error:` prefix at the start of an output line (or straight after a tab, when
 the localized `エラー：` / `错误：`. Get this wrong and a failed export reports success. Reading the output
 pipe to EOF is also how you know the batch finished.
 
-Allow a generous startup timeout: a cold ClickOnce launch plus Skyline's update check can exceed the
-official runner's 15 s.
+##### ⚠️ Waiting for step 3's connection: never unblock it with a dummy client
+
+`NamedPipeServerStream.WaitForConnection()` has no timeout and no cancellation, so the obvious way to give
+up on it — block a worker thread, abandon it on a deadline, and release it by connecting a **client of your
+own** to the same pipe — is a trap. The waiter cannot tell your dummy from Skyline. It records a
+connection, the wait reports success, and step 3 then writes the arguments to a client that has already
+been disposed:
+
+```text
+Parquet export failed (Pipe is broken.); falling back to CSV.
+```
+
+That message sends you after Skyline, the network share, and the parquet writer. The cause is your own
+timeout. Worse, it is a race, so **two calls failing for the same reason report it two different ways** —
+PRISM logged `Pipe is broken.` for one export and the honest "did not start" for the next, 90 s apart,
+from one root cause.
+
+Use `WaitForConnectionAsync(token)` on a pipe created with `PipeOptions.Asynchronous`, which cancels for
+real and needs no dummy. `PipeOptions` is a server-local setting; Skyline's side is unchanged.
+
+##### Startup timeout: make it generous, and make it adaptive
+
+A cold ClickOnce launch plus Skyline's update check can far exceed the official runner's 15 s. **90 s is
+not enough either.** A tool that exports several documents concurrently competes with itself: PRISM
+launched a headless export while an already-open Skyline was streaming a 1.4 GB parquet to a network
+share, and *both* headless starts blew past 90 s.
+
+A flat wall-clock limit cannot tell a slow start from one that is never coming, which is what makes it hard
+to size. Use the process list instead — the Skyline you launched is not your child (the ClickOnce launcher
+exits immediately), but it is visible:
+
+- Base wait ~3 min. If nothing new appeared in the process list by then, the launch failed; fail now.
+- If a Skyline *has* appeared but is silent, keep waiting to a hard cap (PRISM uses 10 min) and say so in
+  the log.
+
+Report the two outcomes differently. "Did not start" and "started but never connected" send the reader to
+completely different places.
+
+##### ⚠️ Diffing the process list to kill what you started breaks under concurrency
+
+The usual recipe — snapshot Skyline PIDs before launching, and on give-up kill anything new with
+`MainWindowHandle == 0` — assumes **you are the only one launching**. Run two exports at once and each
+one's "new, windowless Skyline" is very possibly the *other's*, quietly working on a different document.
+Neither is your child, and the pipe connection carries no PID, so there is nothing to tell them apart.
+
+Track how many headless calls are in flight in your process and **skip the kill entirely when there is
+more than one**. A leaked Skyline costs memory; killing a live export costs the run.
 
 #### ⚠️ Headless parquet is broken in `SkylineCmd` (use SkylineRunner instead)
 `SkylineCmd --report-file=out.parquet` fails (Skyline-daily 25.1) with:
