@@ -359,11 +359,20 @@ survive, not one you can prevent.
 **If you can accept skipping the update check, you can avoid it entirely.** Activating the `.appref-ms`
 is what runs `CreateActContext`. Launching the cached `Skyline*.exe` from the ClickOnce application
 folder directly (the same folder §12 has you find for `SkylineCmd.exe` - the one with `Skyline*.exe`
-beside it) skips activation, so this crash cannot happen, and it is much faster - measured **12 ms to
-process / ~210 ms to connect, against 240-674 ms / 512-2558 ms** through activation. The `.exe.config`
-sits beside the exe, so parquet still works. The cost is that Skyline will not self-update when you
-launch it, and your resolved path goes stale when it does update, so resolve it fresh (newest first)
-every time.
+beside it) skips activation, so this crash cannot happen. Verified end to end: a real report export,
+`--in` + `--report-add` + `--report-file=*.parquet`, produced a file **byte-identical** to the same
+export through the shortcut (32,382 x 23, `cmp`-clean). The `.exe.config` sits beside the exe, which is
+what keeps parquet working.
+
+Do it for the crash, **not** for the speed. The launch itself is much cheaper - **12-18 ms to process
+and ~210-230 ms to connect, against 240-674 ms and 512-2558 ms** through activation - but that ~0.7 s
+disappears into the document work: in the paired export above the direct run's *total* was actually
+higher (4.29 s vs 3.49 s), because it went first and paid the cold read of the 57 MB `.skyd`. Quoting
+the launch numbers as an export speedup would be wrong.
+
+The cost is that Skyline will not self-update when you launch it - arguably what you want midway
+through a multi-document cohort, since it keeps every document on one build - and that your resolved
+path goes stale whenever it does update, so resolve it fresh (newest first) every time.
 
 #### ⚠️ Headless parquet is broken in `SkylineCmd` (use SkylineRunner instead)
 `SkylineCmd --report-file=out.parquet` fails (Skyline-daily 25.1) with:
