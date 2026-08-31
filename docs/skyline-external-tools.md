@@ -350,11 +350,14 @@ on: the crash precedes Skyline's own startup, so nothing is ever written to the 
    the real fault is recorded.
 4. A retry has so far always succeeded on the **next** attempt, so treat it as retryable rather than fatal.
 
-**Not reproducible on demand.** ~20 instrumented launches stayed clean while ruling out a slow
+**Not reproducible on demand.** ~32 instrumented launches stayed clean while ruling out a slow
 deployment-manifest fetch (301 ms cold), a cold `dfsvc` (it does not persist on Windows 11), memory
 pressure to 6.4 GB free, single-instance routing with a GUI already up, a working directory inside the
-ClickOnce store, and a pending ClickOnce update. Treat it as an intermittent ClickOnce fault you must
-survive, not one you can prevent.
+ClickOnce store, a pending ClickOnce update, and - the classic trigger for this exception, so worth
+stating explicitly - **concurrent activation**: 12 activations in rounds of 4 at once produced zero
+crashes. That last one matters if your tool exports several documents in parallel, because it means the
+parallelism is not the cause and serializing activation behind a mutex would not help. Treat it as an
+intermittent ClickOnce fault you must survive, not one you can prevent.
 
 **If you can accept skipping the update check, you can avoid it entirely.** Activating the `.appref-ms`
 is what runs `CreateActContext`. Launching the cached `Skyline*.exe` from the ClickOnce application
