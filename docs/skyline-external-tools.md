@@ -309,6 +309,62 @@ Neither is your child, and the pipe connection carries no PID, so there is nothi
 Track how many headless calls are in flight in your process and **skip the kill entirely when there is
 more than one**. A leaked Skyline costs memory; killing a live export costs the run.
 
+##### ⚠️ Skyline sometimes crashes ~1 s into a headless launch - poll for the process, do not wait out your timeout
+
+The launched Skyline is not your child, so the only signals you have are the pipe connecting and the
+process list. If you check the process list **once, when your startup deadline expires**, you cannot tell
+these two apart:
+
+- Skyline is slow to start (a big document, a loaded machine) - keep waiting.
+- Skyline started and **died a second in** - give up now and retry.
+
+They are not equally likely. Skyline intermittently crashes during ClickOnce activation, before any of its
+own code runs:
+
+```text
+Application: Skyline-daily.exe
+Description: The process was terminated due to an unhandled exception.
+Exception Info: System.UnauthorizedAccessException
+   at System.Deployment.Internal.Isolation.IsolationInterop.CreateActContext(...)
+   at System.ActivationContext.CreateFromName(System.ApplicationIdentity)
+   at System.Security.HostSecurityManager.DetermineApplicationTrust(...)
+   at System.AppDomain.InitializeDomainSecurity(...)
+```
+
+In one tool's log, **all five** failed headless launches had a crash like this in the Windows Application
+event log **in the same second as the launch** - same fault bucket every time. The tool waited 90 s (later
+180 s) for each, then reported "did not start within 180s ... another export may be saturating the
+machine", which sent the investigation at machine load for two sessions. There is no Skyline output to go
+on: the crash precedes Skyline's own startup, so nothing is ever written to the pipe.
+
+**What to do**
+
+1. **Poll for the process every second**, not once at the deadline. A process that appears and then
+   vanishes has crashed - report that, and retry immediately. Retries are usually counted in *attempts*,
+   so a crash that takes the full timeout each time silently burns the entire budget and lands your
+   caller on whatever fallback it has (for a report exporter, CSV instead of parquet).
+2. **Require two consecutive misses** before calling it dead. `Process.GetProcessesByName` can fail
+   transiently, and one miss must not abandon a Skyline legitimately minutes into opening a large
+   document.
+3. **Say `CreateActContext` in the message** and point at the Application event log. It is the only place
+   the real fault is recorded.
+4. A retry has so far always succeeded on the **next** attempt, so treat it as retryable rather than fatal.
+
+**Not reproducible on demand.** ~20 instrumented launches stayed clean while ruling out a slow
+deployment-manifest fetch (301 ms cold), a cold `dfsvc` (it does not persist on Windows 11), memory
+pressure to 6.4 GB free, single-instance routing with a GUI already up, a working directory inside the
+ClickOnce store, and a pending ClickOnce update. Treat it as an intermittent ClickOnce fault you must
+survive, not one you can prevent.
+
+**If you can accept skipping the update check, you can avoid it entirely.** Activating the `.appref-ms`
+is what runs `CreateActContext`. Launching the cached `Skyline*.exe` from the ClickOnce application
+folder directly (the same folder §12 has you find for `SkylineCmd.exe` - the one with `Skyline*.exe`
+beside it) skips activation, so this crash cannot happen, and it is much faster - measured **12 ms to
+process / ~210 ms to connect, against 240-674 ms / 512-2558 ms** through activation. The `.exe.config`
+sits beside the exe, so parquet still works. The cost is that Skyline will not self-update when you
+launch it, and your resolved path goes stale when it does update, so resolve it fresh (newest first)
+every time.
+
 #### ⚠️ Headless parquet is broken in `SkylineCmd` (use SkylineRunner instead)
 `SkylineCmd --report-file=out.parquet` fails (Skyline-daily 25.1) with:
 
