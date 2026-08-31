@@ -362,10 +362,17 @@ intermittent ClickOnce fault you must survive, not one you can prevent.
 **If you can accept skipping the update check, you can avoid it entirely.** Activating the `.appref-ms`
 is what runs `CreateActContext`. Launching the cached `Skyline*.exe` from the ClickOnce application
 folder directly (the same folder §12 has you find for `SkylineCmd.exe` - the one with `Skyline*.exe`
-beside it) skips activation, so this crash cannot happen. Verified end to end: a real report export,
-`--in` + `--report-add` + `--report-file=*.parquet`, produced a file **byte-identical** to the same
-export through the shortcut (32,382 x 23, `cmp`-clean). The `.exe.config` sits beside the exe, which is
-what keeps parquet working.
+beside it) skips activation, so this crash cannot happen. Verified against the shortcut on three
+command types, all identical: a `--report-file=*.parquet` export (32,382 x 23, **byte-identical**,
+`cmp`-clean), the same export as `--report-format=csv` (**byte-identical**), and `--version` (same
+string, same build hash). The `.exe.config` sits beside the exe, which is what keeps parquet working.
+
+**What that does NOT cover.** A directly launched app is not network-deployed, so
+`ApplicationDeployment.IsNetworkDeployed` is false inside it and any Skyline code path that asks - an
+in-app update check, for instance - takes its other branch. Report export never goes near that. If you
+drive other commands this way, check them; and prefer falling back to the direct exe only when the
+shortcut has already crashed, so the documented path stays the default and the bypass is reached only
+when the alternative is failing anyway.
 
 Do it for the crash, **not** for the speed. The launch itself is much cheaper - **12-18 ms to process
 and ~210-230 ms to connect, against 240-674 ms and 512-2558 ms** through activation - but that ~0.7 s
