@@ -359,6 +359,21 @@ crashes. That last one matters if your tool exports several documents in paralle
 parallelism is not the cause and serializing activation behind a mutex would not help. Treat it as an
 intermittent ClickOnce fault you must survive, not one you can prevent.
 
+**Rebuilding the ClickOnce store does NOT fix it** - worth stating, because it is the standard advice
+(Skyline's own `tip_recover_install` wiki page, and the support thread above) and it is what you will
+try first. On the machine these measurements come from, every Skyline deployment was uninstalled with
+`rundll32.exe dfshim.dll,ShArpMaintain <deployment identity>`, the store was verified empty of them, and
+a single clean Skyline-daily was reinstalled. **The crash recurred on the next run.** That clears two
+theories at once: a stale or corrupt cache, and interference from co-installed deployments - the machine
+had three, one of them unsigned, and none were present when it happened again.
+
+Two notes if you rebuild anyway. Prefer `ShArpMaintain` per deployment over deleting
+`%LOCALAPPDATA%\Apps\2.0` by hand: it clears the Add/Remove registration and the ApplicationTrust
+entry as well as the cached files, and on that machine it removed every `skyl..*` folder by itself,
+leaving the hand-delete nothing to do. And check what else lives in that store first - it is shared, and
+there the only other occupants were an unrelated product's Office add-ins, which a wholesale delete would
+have taken out. Skyline's own settings live *inside* the store, so back them up before removing anything.
+
 **If you can accept skipping the update check, you can avoid it entirely.** Activating the `.appref-ms`
 is what runs `CreateActContext`. Launching the cached `Skyline*.exe` from the ClickOnce application
 folder directly (the same folder §12 has you find for `SkylineCmd.exe` - the one with `Skyline*.exe`
