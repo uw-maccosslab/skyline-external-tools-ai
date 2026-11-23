@@ -63,6 +63,9 @@ before writing logic. A **classic** tool needs only `Core` + a thin launcher + a
 
 - `tool-inf/`: `Arguments=$(SkylineConnection)`; the `<ToolName>.properties` filename **must match** the
   `AssemblyName`/`Command`; keep `Version` in sync with the assembly `<Version>`.
+- **Logo:** exactly one `.png`/`.jpg`/`.gif` directly in `tool-inf/` (e.g. `tool-inf/<Tool>.png`), copied
+  to the output like the manifest. Without it Skyline shows the default tool logo. Have the verify step fail
+  unless there is exactly one.
 - Publish **framework-dependent**; run `build/package-and-verify.ps1` (test → zip → **launch-verify**:
   extract clean, launch the exe, grep the log for load failures).
 - Install: Tools ▸ Tool Store ▸ Install from file, or `--tool-add-zip`. **Close the tool before

@@ -19,6 +19,9 @@
     <!-- Skyline tool manifest: copied next to the exe and staged into the tool zip. -->
     <None Include="tool-inf\info.properties" CopyToOutputDirectory="PreserveNewest" />
     <None Include="tool-inf\SkylineToolTemplate.properties" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Add the tool's logo before shipping: exactly ONE .png/.jpg/.gif directly in tool-inf (Skyline shows its
+         default tool logo without one), e.g.
+    <None Include="tool-inf\SkylineToolTemplate.png" CopyToOutputDirectory="PreserveNewest" /> -->
   </ItemGroup>
 
 </Project>

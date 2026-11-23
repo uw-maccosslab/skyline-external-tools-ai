@@ -41,6 +41,10 @@ guide §0.
 
 ## Package + install
 
+Before the first release, add the tool's **logo**: exactly one `.png`, `.jpg` or `.gif` directly in
+`tool-inf/` (and a `<None Include>` for it in the App project). Without it Skyline shows the default tool
+logo. See field guide §7.
+
 ```powershell
 pwsh -File build/package-and-verify.ps1        # test -> publish (framework-dependent) -> zip -> launch-verify
 ```

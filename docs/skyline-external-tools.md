@@ -841,12 +841,18 @@ FILE EXTENSION"): headless parquet is currently broken by a missing binding in `
 - `<ToolName>.properties`: `Command=<Tool>.exe`, **`Arguments=$(SkylineConnection)`**, `Title`,
   `InitialDirectory=`, `OutputToImmediateWindow=False`. The properties filename **must match** the
   `Command`/`AssemblyName`.
-- Copy both into the build output (`<None Include="tool-inf\..." CopyToOutputDirectory="PreserveNewest" />`).
+- **Logo:** put **exactly one** image (`.png`, `.jpg` or `.gif`) directly in `tool-inf/`, e.g.
+  `tool-inf/<Tool>.png`. Skyline uses it as the tool's logo; with no image it shows the **default tool
+  logo**, and with more than one it is ambiguous which is used. Easy to forget (Skyline Glimpse shipped
+  26.2.0 without one and needed a patch release), so make the verify step fail unless `tool-inf/` holds
+  exactly one image.
+- Copy them all into the build output (`<None Include="tool-inf\..." CopyToOutputDirectory="PreserveNewest" />`).
 
 ### Zip
 `dotnet msbuild build/package.proj` → `dotnet publish` the WPF app **framework-dependent**
 (`--self-contained false /p:UseAppHost=true`, so the user installs the .NET 8 **Desktop** Runtime separately →
-small zip) → `ZipDirectory` to `publish/<Tool>.zip`. Stage `tool-inf/` and the `Reports/*.skyr` into the zip.
+small zip) → `ZipDirectory` to `publish/<Tool>.zip`. Stage `tool-inf/` (manifest **and logo**) and the
+`Reports/*.skyr` into the zip.
 
 ### Ship gate (learned the hard way)
 Automate **test → package → launch-verify** (`package-and-verify.ps1`). The verify step extracts the zip to a
@@ -855,6 +861,11 @@ WPF window (hence ScottPlot/SkiaSharp/XAML) loads at startup, a broken native de
 error — grep the tool's log for `Could not load file or assembly | XamlParseException |
 TypeInitializationException | DllNotFoundException | BadImageFormatException` and require a
 "tool started" line. A failed *connection* from the dummy arg is expected; a failed *load* is not.
+Also check the extracted `tool-inf/` holds both `.properties` files and exactly one logo image:
+```powershell
+$images = @(Get-ChildItem (Join-Path $dir 'tool-inf') -File | Where-Object { $_.Extension -in '.png', '.jpg', '.jpeg', '.gif' })
+if ($images.Count -ne 1) { Write-Host "VERIFY FAILED: tool-inf must hold exactly one logo image, found $($images.Count)"; exit 1 }
+```
 
 ### Install
 > For an **end-user** (analyst) walkthrough of installing the packaged `.zip` — prerequisites, the
